@@ -1,40 +1,97 @@
-# PDF Keyword Filter (API only)
+# PDF phrase filter
 
-Upload a PDF via **Postman**; the app finds pages that contain any keyword from `keywords_embedded.py`, **saves** the filtered PDF under **`output/`**, and **returns JSON** with status, extracted page numbers, and total pages.
+Small **Flask** service that accepts a PDF upload, finds pages whose extractable text contains any of your configured **full phrases** (substring match, **case-insensitive**), writes a **new PDF** with only those pages, and returns **JSON** with page numbers and the saved file path.
 
-## Setup
+Matching is driven by **`PATTERN_DEFINITIONS`** in `keywords_embedded.py`—not a loose keyword list: each entry is one exact phrase that must appear somewhere on the page (as returned by the PDF library’s text extractor).
+
+## How it works
+
+1. **Scan** — [PyMuPDF](https://pymupdf.readthedocs.io/) (`fitz`) opens the PDF and reads each page with `get_text()`.
+2. **Match** — For each pattern, the phrase is compared to the page text after lowercasing both sides. If the phrase appears as a substring, that page is included and the pattern’s **label** is recorded (e.g. `"Addendum"`).
+3. **Build** — Matched pages are **copied** from the source PDF into a new file (`insert_pdf`), preserving layout, fonts, and images where possible.
+4. **Output** — Filtered PDFs are written under **`output/`** with a unique suffix in the filename.
+
+## Requirements
+
+- Python **3.10+** (type hints used in the codebase)
+- Dependencies in `requirements.txt`:
+  - **pymupdf** — PDF read, text extraction, and page assembly
+  - **flask** — HTTP API
+
+## Installation
 
 ```bash
-cd "D:\Personal project\pdf_filter"
+cd pdf_filter
 pip install -r requirements.txt
 ```
 
-Edit **`keywords_embedded.py`**: `KEYWORDS_JSON` is JSON with:
+## Configuring phrases
 
-- **`keywords`** — include pages that contain any of these strings.
-- **`exclude_keywords`** — never include a page if it contains any of these (even if it matched `keywords`).
-- **`exclude_image_heavy_pages`** (optional, default `true` when using an object) — skip pages that have embedded images and very little extractable text (typical photo / map pages).
-- **`image_page_max_text_chars`** (optional, default `80`) — text length threshold used with the rule above.
+Edit **`keywords_embedded.py`**:
 
-You can still use a plain JSON array for `KEYWORDS_JSON` for backward compatibility (no excludes, no image skipping).
+- Define phrase strings as variables (optional, for clarity).
+- Map **display names** → **phrases** in **`PATTERN_DEFINITIONS`**.
 
-## Run
+Example:
+
+```python
+addendum = "market conditions addendum to the appraisal report"
+
+PATTERN_DEFINITIONS: dict[str, str] = {
+    "Addendum": addendum,
+    # "Label shown in logic": "exact phrase to find in page text",
+}
+```
+
+- **Case** — Phrases can be written in any casing; matching is case-insensitive.
+- **Add patterns** — Add a new key and phrase. Empty or all-whitespace phrases are rejected at startup (HTTP 500).
+- **Page must match at least one phrase** — If no page contains any configured phrase, the API responds with **422** and no output file.
+
+**Note:** Text comes from the PDF’s encoded content. If a title is only an image, or extraction splits words oddly, a phrase might not match even though it looks correct on screen.
+
+## Run the server
 
 ```bash
 python api.py
 ```
 
-Server: `http://127.0.0.1:8000`
+Default URL: **http://127.0.0.1:8000**
 
-## Postman
+## API
 
-1. **POST** `http://127.0.0.1:8000/extract`
+### `POST /extract`
+
+- **Content type:** `multipart/form-data`
+- **Field name:** `file` (type: file)
+- **File:** must be a **`.pdf`**
+
+#### Try with curl
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/extract -F "file=@path/to/document.pdf"
+```
+
+On Windows, use `curl.exe` if PowerShell aliases `curl` to `Invoke-WebRequest`, or use Postman below.
+
+#### Postman
+
+1. Method **POST** → `http://127.0.0.1:8000/extract`
 2. **Body** → **form-data**
-3. Key **`file`** → type **File** → choose your PDF
+3. Key **`file`**, type **File**, choose your PDF
 
-Every response uses the same shape, in this **order**: `success`, `message`, `data`, `meta`, `errors` (Flask’s default sorted keys are avoided so Postman matches this layout).
+### Response shape
 
-**Success (200):**
+Every JSON body uses this structure (key order preserved for readability in clients):
+
+| Field       | Meaning                                      |
+|------------|-----------------------------------------------|
+| `success`  | `true` or `false`                             |
+| `message`  | Short human-readable summary                  |
+| `data`     | Payload (may be empty on errors)              |
+| `meta`     | Reserved for future use; currently `{}`       |
+| `errors`   | List of detail strings when something failed  |
+
+#### Success (HTTP 200)
 
 ```json
 {
@@ -42,7 +99,7 @@ Every response uses the same shape, in this **order**: `success`, `message`, `da
   "message": "PDF compressed successfully",
   "data": {
     "extracted_pages": [1, 5, 12],
-    "filtered_pdf_path": "output/report_filtered_abc123def45.pdf",
+    "filtered_pdf_path": "output/report_filtered_a1b2c3d4e5.pdf",
     "total_pages_in_pdf": 30
   },
   "meta": {},
@@ -50,21 +107,28 @@ Every response uses the same shape, in this **order**: `success`, `message`, `da
 }
 ```
 
-- **`data.extracted_pages`** — 1-based page numbers from the **original** PDF in the filtered file.
-- **`data.total_pages_in_pdf`** — total pages in the **uploaded** PDF.
-- **`data.filtered_pdf_path`** — saved file path (relative to the project).
+- **`extracted_pages`** — 1-based page numbers from the **original** PDF that were kept (sorted ascending).
+- **`filtered_pdf_path`** — Path to the new PDF, **relative to the project root** (forward slashes).
+- **`total_pages_in_pdf`** — Page count of the uploaded PDF.
 
-**Error example:** `success` is `false`, `message` summarizes the case, details are in **`errors`** (list of strings). Optional fields may appear in **`data`** (e.g. **`total_pages_in_pdf`** on **422** when no page matches). HTTP status: **400**, **422**, or **500**.
+#### Common errors
+
+| HTTP | Typical cause |
+|------|----------------|
+| **400** | Missing `file`, empty upload, non-PDF extension, corrupt/unreadable PDF |
+| **422** | No page contained any configured phrase (`data` may include `total_pages_in_pdf`) |
+| **500** | Invalid pattern config (e.g. empty `PATTERN_DEFINITIONS`), or failure writing output |
 
 ## Project layout
 
 ```
 pdf_filter/
-├── api.py               ← start here (Flask)
-├── scanner.py           ← page text + keyword matching
-├── builder.py           ← writes filtered PDF
-├── keywords_load.py     ← reads KEYWORDS_JSON
-├── keywords_embedded.py ← your keywords (JSON string)
+├── api.py                 # Flask app, /extract endpoint
+├── scanner.py             # PyMuPDF text scan + phrase matching
+├── builder.py             # Build filtered PDF from matched page indices
+├── keywords_embedded.py   # PATTERN_DEFINITIONS and phrase strings
 ├── requirements.txt
-└── output/              ← filtered PDFs saved here
+├── README.md
+└── output/                # Generated filtered PDFs (created on first success)
 ```
+

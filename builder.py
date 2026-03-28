@@ -18,7 +18,7 @@ def build_filtered_pdf(
 
     Args:
         input_path  : path to the original PDF
-        matched     : { page_index_0based: [keywords] }
+        matched     : { page_index_0based: [pattern names] }
         output_path : where to save the filtered PDF
     """
     # Ensure output directory exists

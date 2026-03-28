@@ -1,6 +1,7 @@
 """
-Flask API: POST multipart ``file`` (PDF) → match pages using ``keywords_embedded.py``,
-save filtered PDF under ``output/``, return a standard JSON envelope.
+Flask API: POST multipart ``file`` (PDF) → match pages using exact phrases from
+``keywords_embedded.py`` (case-insensitive), save filtered PDF under ``output/``,
+return a standard JSON envelope.
 """
 
 import json
@@ -14,7 +15,11 @@ from flask import Flask, Response, request
 from werkzeug.utils import secure_filename
 
 from builder import build_filtered_pdf
-from keywords_load import load_embedded_keywords
+from keywords_embedded import (
+    COMPARABLE_RENTAL_PATTERN_KEYS,
+    COMPARABLE_SALES_PATTERN_KEYS,
+    PATTERN_DEFINITIONS,
+)
 from scanner import scan_pdf
 
 _PROJECT_ROOT = Path(__file__).resolve().parent
@@ -23,6 +28,19 @@ _OUTPUT_DIR = _PROJECT_ROOT / "output"
 app = Flask(__name__)
 
 SUCCESS_MESSAGE = "PDF compressed successfully"
+
+
+def _comparable_group_flags(matched: dict[int, list[str]]) -> dict[str, bool]:
+    """True if any page matched at least one phrase in the sales or rental group."""
+    found: set[str] = set()
+    for names in matched.values():
+        found.update(names)
+    sales = set(COMPARABLE_SALES_PATTERN_KEYS)
+    rental = set(COMPARABLE_RENTAL_PATTERN_KEYS)
+    return {
+        "comparable_sales": bool(found & sales),
+        "comparable_rental": bool(found & rental),
+    }
 
 
 def _envelope(
@@ -77,14 +95,13 @@ def extract():
             status=400,
         )
 
-    try:
-        keywords = load_embedded_keywords()
-    except ValueError as e:
-        err = str(e)
+    if not PATTERN_DEFINITIONS or any(
+        not (p or "").strip() for p in PATTERN_DEFINITIONS.values()
+    ):
         return _envelope(
             success=False,
             message="Server configuration error.",
-            errors=[err],
+            errors=["PATTERN_DEFINITIONS in keywords_embedded.py must be non-empty with non-blank phrases."],
             status=500,
         )
 
@@ -103,9 +120,7 @@ def extract():
         try:
             matched, total_pages = scan_pdf(
                 pdf_path=tmp_path,
-                keywords=keywords,
-                case_sensitive=False,
-                whole_word=False,
+                patterns=PATTERN_DEFINITIONS,
             )
         except RuntimeError as e:
             err = str(e)
@@ -116,12 +131,17 @@ def extract():
                 status=400,
             )
 
+        flags = _comparable_group_flags(matched)
+
         if not matched:
             return _envelope(
                 success=False,
                 message="No matching pages.",
-                errors=["No pages matched your keywords."],
-                data={"total_pages_in_pdf": total_pages},
+                errors=["No pages matched the configured phrase patterns."],
+                data={
+                    "total_pages_in_pdf": total_pages,
+                    **flags,
+                },
                 status=422,
             )
 
@@ -155,6 +175,7 @@ def extract():
                 "extracted_pages": extracted_pages,
                 "filtered_pdf_path": saved_rel,
                 "total_pages_in_pdf": total_pages,
+                **flags,
             },
             status=200,
         )
