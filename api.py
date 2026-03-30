@@ -3,7 +3,8 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+import urllib.request
+import urllib.error
 
 from flask import Flask, Response, request
 from werkzeug.utils import secure_filename
@@ -22,10 +23,62 @@ _OUTPUT_DIR = _PROJECT_ROOT / "output"
 app = Flask(__name__)
 
 SUCCESS_MESSAGE = "PDF compressed successfully"
+class ApiRequestError(Exception):
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        errors: list[Any] | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
+        self.errors = errors or []
+        self.data = data
 
 
-def _comparable_group_flags(matched: dict[int, list[str]]) -> dict[str, bool]:
-    """True if any page matched at least one phrase in the sales or rental group."""
+def _filtered_pdf_response(*, input_pdf_path: str, output_file_name: str) -> Response:
+    """Scan a PDF and return the filtered PDF response envelope."""
+    matched, total_pages = _scan_pdf_for_patterns(pdf_path=input_pdf_path)
+
+    flags = _derive_comparable_group_flags(matched)
+
+    _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = secure_filename(output_file_name)
+    output_pdf_path = _OUTPUT_DIR / safe_name
+
+    print(f"input_pdf_path: {input_pdf_path}")
+    print(f"matched: {matched}")
+    print(f"output_pdf_path: {output_pdf_path}")
+
+    build_filtered_pdf(
+        input_path=input_pdf_path,
+        matched=matched,
+        output_path=str(output_pdf_path),
+    )
+
+    extracted_pages = sorted(page_index + 1 for page_index in matched.keys())
+    saved_rel = str(output_pdf_path.relative_to(_PROJECT_ROOT)).replace("\\", "/")
+
+    return Response(
+        json.dumps({
+            "success": True,
+            "message": SUCCESS_MESSAGE,
+            "data": {
+                "extracted_pages": extracted_pages,
+                "filtered_pdf_path": saved_rel,
+                "total_pages_in_pdf": total_pages,
+                **flags,
+            },
+        }),
+        status=200,
+        mimetype="application/json",
+    )
+
+
+def _derive_comparable_group_flags(matched: dict[int, list[str]]) -> dict[str, bool]:
+    """True if any matched pages include sales or rental group phrases."""
     found: set[str] = set()
     for names in matched.values():
         found.update(names)
@@ -36,149 +89,83 @@ def _comparable_group_flags(matched: dict[int, list[str]]) -> dict[str, bool]:
         "comparable_rental": bool(found & rental),
     }
 
-
-def _envelope(
-    *,
-    success: bool,
-    message: str,
-    data: dict[str, Any] | None = None,
-    meta: dict[str, Any] | None = None,
-    errors: list[Any] | None = None,
-    status: int = 200,
-) -> Response:
-    body = {
-        "success": success,
-        "message": message,
-        "data": data if data is not None else {},
-        "meta": meta if meta is not None else {},
-        "errors": errors if errors is not None else [],
-    }
-    return Response(
-        json.dumps(body, ensure_ascii=False, sort_keys=False),
-        mimetype="application/json; charset=utf-8",
-        status=status,
-    )
-
-
 @app.post("/extract")
 def extract():
-    if "file" not in request.files:
-        return _envelope(
-            success=False,
-            message="Validation failed.",
-            errors=[
-                "Missing form field `file`. Postman: Body → form-data → key `file` (type File).",
-            ],
-            status=400,
-        )
-
-    upload = request.files["file"]
-    if not upload or upload.filename == "":
-        return _envelope(
-            success=False,
-            message="Validation failed.",
-            errors=["No file selected."],
-            status=400,
-        )
-
-    if not (upload.filename or "").lower().endswith(".pdf"):
-        return _envelope(
-            success=False,
-            message="Validation failed.",
-            errors=["Upload a PDF (.pdf)."],
-            status=400,
-        )
-
-    if not PATTERN_DEFINITIONS or any(
-        not (p or "").strip() for p in PATTERN_DEFINITIONS.values()
-    ):
-        return _envelope(
-            success=False,
-            message="Server configuration error.",
-            errors=["PATTERN_DEFINITIONS in keywords_embedded.py must be non-empty with non-blank phrases."],
-            status=500,
-        )
-
     fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
     try:
-        upload.save(tmp_path)
-        if os.path.getsize(tmp_path) == 0:
-            return _envelope(
-                success=False,
-                message="Validation failed.",
-                errors=["Empty file upload."],
-                status=400,
-            )
+        s3_url = _read_required_s3_url()
+        _download_pdf_from_url(s3_url=s3_url, destination_path=tmp_path)
 
-        try:
-            matched, total_pages = scan_pdf(
-                pdf_path=tmp_path,
-                patterns=PATTERN_DEFINITIONS,
-            )
-        except RuntimeError as e:
-            err = str(e)
-            return _envelope(
-                success=False,
-                message="Could not process PDF.",
-                errors=[err],
-                status=400,
-            )
-
-        flags = _comparable_group_flags(matched)
-
-        if not matched:
-            return _envelope(
-                success=False,
-                message="No matching pages.",
-                errors=["No pages matched the configured phrase patterns."],
-                data={
-                    "total_pages_in_pdf": total_pages,
-                    **flags,
-                },
-                status=422,
-            )
-
-        _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        safe_name = secure_filename(upload.filename or "document.pdf")
-        stem = Path(safe_name).stem or "document"
-        out_file = _OUTPUT_DIR / f"{stem}_filtered_{uuid4().hex[:10]}.pdf"
-
-        try:
-            build_filtered_pdf(
-                input_path=tmp_path,
-                matched=matched,
-                output_path=str(out_file),
-            )
-        except RuntimeError as e:
-            err = str(e)
-            return _envelope(
-                success=False,
-                message="Could not save filtered PDF.",
-                errors=[err],
-                status=500,
-            )
-
-        extracted_pages = sorted(i + 1 for i in matched.keys())
-        saved_rel = str(out_file.relative_to(_PROJECT_ROOT)).replace("\\", "/")
-
-        return _envelope(
-            success=True,
-            message=SUCCESS_MESSAGE,
-            data={
-                "extracted_pages": extracted_pages,
-                "filtered_pdf_path": saved_rel,
-                "total_pages_in_pdf": total_pages,
-                **flags,
-            },
-            status=200,
+        source_file_name = Path(s3_url.split("?")[0]).name or "document.pdf"
+        return _filtered_pdf_response(
+            input_pdf_path=tmp_path,
+            output_file_name=source_file_name,
         )
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    except ApiRequestError as err:
+        return Response(
+            json.dumps({
+                "success": False,
+                "message": err.message,
+                "data": err.data,
+                "errors": err.errors,
+                "status": err.status_code,
+            })
+        )
+    except Exception as err:
+        return Response( json.dumps({
+                "success": False,
+                "message": str(err),
+                "data": {},
+                "errors": [],
+                "status": 500,
+            }),
+            status=500,
+            mimetype="application/json",
+        )
 
+# In the reqbody pass the bucket url
+def _read_required_s3_url() -> str:
+    payload = request.get_json(silent=True) or {}
+    raw_url = payload.get("s3_url")
+    if not raw_url or not isinstance(raw_url, str) or not raw_url.strip():
+        raise ApiRequestError(
+            status_code=400,
+            message="Validation failed.",
+            errors=[
+                'Missing JSON field `s3_url`'
+            ],
+        )
+
+    return raw_url.strip()
+
+def _download_pdf_from_url(*, s3_url: str, destination_path: str) -> None:
+    try:
+        request_obj = urllib.request.Request(
+            s3_url,
+            headers={"User-Agent": "PDF-Extraction/1.0"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request_obj, timeout=120) as resp:
+            # Stream download to avoid loading whole PDF into memory.
+            with open(destination_path, "wb") as file_handle:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    file_handle.write(chunk)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        raise ApiRequestError(
+            status_code=400,
+            message="Could not download PDF from s3_url.",
+            errors=[str(exc)],
+        )
+
+def _scan_pdf_for_patterns(*, pdf_path: str) -> tuple[dict[int, list[str]], int]:
+    try:
+        return scan_pdf(pdf_path=pdf_path, patterns=PATTERN_DEFINITIONS)
+    except RuntimeError as exc:
+        raise ApiRequestError(status_code=400, message="Could not process PDF.", errors=[str(exc)])
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8000, debug=True)

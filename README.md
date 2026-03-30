@@ -61,35 +61,31 @@ Default URL: **http://127.0.0.1:8000**
 
 ### `POST /extract`
 
-- **Content type:** `multipart/form-data`
-- **Field name:** `file` (type: file)
-- **File:** must be a **`.pdf`**
+- **Content type:** `application/json`
+- **Body JSON:** must include `s3_url`
 
 #### Try with curl
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/extract -F "file=@path/to/document.pdf"
+curl -s -X POST http://127.0.0.1:8000/extract -H "Content-Type: application/json" -d "{\"s3_url\":\"https://your-bucket.s3.amazonaws.com/path/to/file.pdf\"}"
 ```
 
-On Windows, use `curl.exe` if PowerShell aliases `curl` to `Invoke-WebRequest`, or use Postman below.
-
 #### Postman
-
 1. Method **POST** → `http://127.0.0.1:8000/extract`
-2. **Body** → **form-data**
-3. Key **`file`**, type **File**, choose your PDF
+2. **Body** → **raw** → **JSON**
+3. Paste: `{"s3_url":"https://your-bucket.s3.amazonaws.com/path/to/file.pdf"}`
 
 ### Response shape
 
 Every JSON body uses this structure (key order preserved for readability in clients):
 
-| Field       | Meaning                                      |
-|------------|-----------------------------------------------|
-| `success`  | `true` or `false`                             |
-| `message`  | Short human-readable summary                  |
-| `data`     | Payload (may be empty on errors)              |
-| `meta`     | Reserved for future use; currently `{}`       |
-| `errors`   | List of detail strings when something failed  |
+| Field     | Meaning                                      |
+| --------- | -------------------------------------------- |
+| `success` | `true` or `false`                            |
+| `message` | Short human-readable summary                 |
+| `data`    | Payload (may be empty on errors)             |
+| `meta`    | Reserved for future use; currently `{}`      |
+| `errors`  | List of detail strings when something failed |
 
 #### Success (HTTP 200)
 
@@ -113,10 +109,10 @@ Every JSON body uses this structure (key order preserved for readability in clie
 
 #### Common errors
 
-| HTTP | Typical cause |
-|------|----------------|
-| **400** | Missing `file`, empty upload, non-PDF extension, corrupt/unreadable PDF |
-| **422** | No page contained any configured phrase (`data` may include `total_pages_in_pdf`) |
+| HTTP    | Typical cause                                                                        |
+| ------- | ------------------------------------------------------------------------------------ |
+| **400** | Missing `s3_url`, download failure, empty downloaded file, corrupt/unreadable PDF |
+| **422** | No page contained any configured phrase (`data` may include `total_pages_in_pdf`)    |
 | **500** | Invalid pattern config (e.g. empty `PATTERN_DEFINITIONS`), or failure writing output |
 
 ## Project layout
@@ -131,4 +127,3 @@ pdf_filter/
 ├── README.md
 └── output/                # Generated filtered PDFs (created on first success)
 ```
-

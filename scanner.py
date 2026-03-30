@@ -4,28 +4,18 @@ def scan_pdf(
     pdf_path: str,
     patterns: dict[str, str],
 ) -> tuple[dict, int]:
-    try:
-        doc = fitz.open(pdf_path)
-    except Exception as e:
-        raise RuntimeError(f"Could not open PDF: {e}") from e
-
+    doc = fitz.open(pdf_path)
     total_pages = len(doc)
-    matched: dict[int, list[str]] = {}
+    page_matches: dict[int, list[str]] = {}
 
-    for i in range(total_pages):
-        try:
-            page_text = doc[i].get_text()
-        except Exception:
-            page_text = ""
-
-        lower_page = page_text.lower()
-        found: list[str] = []
-        for name, phrase in patterns.items():
-            if phrase.lower() in lower_page:
-                found.append(name)
-
-        if found:
-            matched[i] = found
+    for page_number in range(total_pages):
+        page_text = doc[page_number].get_text().lower()
+        page_matches[page_number] = [
+            name
+            for name, phrase in patterns.items()
+            if phrase.lower() in page_text
+        ]
 
     doc.close()
+    matched = {page: names for page, names in page_matches.items() if names}
     return matched, total_pages

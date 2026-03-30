@@ -10,13 +10,9 @@ def build_filtered_pdf(
     out_dir = Path(output_path).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        source_doc = fitz.open(input_path)
-    except Exception as e:
-        raise RuntimeError(f"Cannot open source PDF: {e}") from e
-
+    source_doc = fitz.open(input_path)
     output_doc = fitz.open()
-    for page_idx in sorted(matched.keys()):
+    for page_idx in sorted(matched):
         output_doc.insert_pdf(
             source_doc,
             from_page=page_idx,
@@ -25,10 +21,6 @@ def build_filtered_pdf(
             annots=True,
         )
 
-    try:
-        output_doc.save(output_path)
-    except Exception as e:
-        raise RuntimeError(f"Could not save output PDF: {e}") from e
-    finally:
-        output_doc.close()
-        source_doc.close()
+    output_doc.save(output_path)
+    output_doc.close()
+    source_doc.close()
