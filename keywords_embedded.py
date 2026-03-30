@@ -9,6 +9,7 @@ comparableSalesNumber = "COMPARABLE SALE NO."
 comparableRental = "COMPARABLE RENTAL #"
 comparableRentalsNumber = "COMPARABLE RENTAL NO."
 location = "LOCATED AT"
+appraisalValue = "APPRAISED VALUE OF SUBJECT PROPERTY"
 
 COMPARABLE_SALES_PATTERN_KEYS = (
     "Comparable",
@@ -33,4 +34,5 @@ PATTERN_DEFINITIONS: dict[str, str] = {
     "Comparable Rentals Number": comparableRentalsNumber,
     "Comparable Sales Number": comparableSalesNumber,
     "Location": location,
+    "Appraisal Value": appraisalValue,
 }
