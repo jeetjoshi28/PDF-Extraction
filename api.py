@@ -24,6 +24,8 @@ app = Flask(__name__)
 
 SUCCESS_MESSAGE = "PDF compressed successfully"
 class ApiRequestError(Exception):
+    """Structured API error used to return consistent JSON error responses."""
+
     def __init__(
         self,
         status_code: int,
@@ -44,9 +46,7 @@ def _filtered_pdf_response(*, input_pdf_path: str, output_file_name: str) -> Res
 
     flags = _derive_comparable_group_flags(matched)
 
-    _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    safe_name = secure_filename(output_file_name)
-    output_pdf_path = _OUTPUT_DIR / safe_name
+    output_pdf_path = _OUTPUT_DIR / output_file_name
 
     print(f"input_pdf_path: {input_pdf_path}")
     print(f"matched: {matched}")
@@ -91,13 +91,13 @@ def _derive_comparable_group_flags(matched: dict[int, list[str]]) -> dict[str, b
 
 @app.post("/extract")
 def extract():
-    fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
-    os.close(fd)
+    """Main API endpoint that downloads, scans, and filters a PDF from `s3_url`."""
+    tmp_path = tempfile.mktemp(suffix=".pdf")
     try:
         s3_url = _read_required_s3_url()
         _download_pdf_from_url(s3_url=s3_url, destination_path=tmp_path)
 
-        source_file_name = Path(s3_url.split("?")[0]).name or "document.pdf"
+        source_file_name = Path(s3_url.split("?")[0]).name
         return _filtered_pdf_response(
             input_pdf_path=tmp_path,
             output_file_name=source_file_name,
@@ -112,34 +112,31 @@ def extract():
                 "status": err.status_code,
             })
         )
-    except Exception as err:
-        return Response( json.dumps({
-                "success": False,
-                "message": str(err),
-                "data": {},
-                "errors": [],
-                "status": 500,
-            }),
-            status=500,
-            mimetype="application/json",
-        )
 
-# In the reqbody pass the bucket url
 def _read_required_s3_url() -> str:
-    payload = request.get_json(silent=True) or {}
-    raw_url = payload.get("s3_url")
-    if not raw_url or not isinstance(raw_url, str) or not raw_url.strip():
+    """Read and validate `s3_url` from request JSON body."""
+    body = request.get_json(silent=True) or {}
+    s3_url = body.get("s3_url")
+
+    if not isinstance(s3_url, str):
         raise ApiRequestError(
             status_code=400,
             message="Validation failed.",
-            errors=[
-                'Missing JSON field `s3_url`'
-            ],
+            errors=['Missing JSON field `s3_url`'],
         )
 
-    return raw_url.strip()
+    s3_url = s3_url.strip()
+    if not s3_url:
+        raise ApiRequestError(
+            status_code=400,
+            message="Validation failed.",
+            errors=['Missing JSON field `s3_url`'],
+        )
+
+    return s3_url
 
 def _download_pdf_from_url(*, s3_url: str, destination_path: str) -> None:
+    """Download PDF bytes from URL and stream them into a local temp file."""
     try:
         request_obj = urllib.request.Request(
             s3_url,
@@ -162,6 +159,7 @@ def _download_pdf_from_url(*, s3_url: str, destination_path: str) -> None:
         )
 
 def _scan_pdf_for_patterns(*, pdf_path: str) -> tuple[dict[int, list[str]], int]:
+    """Scan PDF with configured text patterns and map scanner failures to API errors."""
     try:
         return scan_pdf(pdf_path=pdf_path, patterns=PATTERN_DEFINITIONS)
     except RuntimeError as exc:
