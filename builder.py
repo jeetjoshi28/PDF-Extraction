@@ -1,8 +1,4 @@
-"""
-builder.py — Builds the filtered output PDF from matched page indices.
-"""
-
-import fitz  # PyMuPDF
+import fitz
 from pathlib import Path
 
 
@@ -11,17 +7,6 @@ def build_filtered_pdf(
     matched: dict,
     output_path: str,
 ) -> None:
-    """
-    Writes a new PDF that contains only the matched pages, copied as native
-    pages from the source file (same content streams, layout, fonts, images —
-    not redrawn or rasterized onto blank pages).
-
-    Args:
-        input_path  : path to the original PDF
-        matched     : { page_index_0based: [pattern names] }
-        output_path : where to save the filtered PDF
-    """
-    # Ensure output directory exists
     out_dir = Path(output_path).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -30,10 +15,8 @@ def build_filtered_pdf(
     except Exception as e:
         raise RuntimeError(f"Cannot open source PDF: {e}") from e
 
-    output_doc = fitz.open()  # blank new document
-
+    output_doc = fitz.open()
     for page_idx in sorted(matched.keys()):
-        # Copy the actual PDF page objects from the source (MuPDF insert_pdf).
         output_doc.insert_pdf(
             source_doc,
             from_page=page_idx,

@@ -1,9 +1,3 @@
-"""
-Flask API: POST multipart ``file`` (PDF) → match pages using exact phrases from
-``keywords_embedded.py`` (case-insensitive), save filtered PDF under ``output/``,
-return a standard JSON envelope.
-"""
-
 import json
 import os
 import tempfile
