@@ -7,6 +7,14 @@ COMPARABLE_SALES_PATTERN_KEYS = (
 COMPARABLE_RENTAL_PATTERN_KEYS = (
     "Comparable Rental",
     "Comparable Rentals Number",
+    "Rent Schedule",
+)
+
+EXCLUDED_PAGE_PHRASES = (
+    "Table of Contents",
+    "The Appraiser certifies and agrees that",
+    "Photos",
+    "Photo"
 )
 
 PATTERN_DEFINITIONS: dict[str, str] = {
@@ -19,7 +27,9 @@ PATTERN_DEFINITIONS: dict[str, str] = {
     "Comparable Sales": "COMPARABLE SALE #",
     "Comparable Rental": "COMPARABLE RENTAL #",
     "Comparable Rentals Number": "COMPARABLE RENTAL NO.",
+    "Rent Schedule": "SINGLE FAMILY COMPARABLE RENT SCHEDULE",
     "Comparable Sales Number": "COMPARABLE SALE NO.",
     "Location": "LOCATED AT",
     "Appraisal Value": "APPRAISED VALUE OF SUBJECT PROPERTY",
+    "Information PUDs": "Project Information for PUDs",
 }

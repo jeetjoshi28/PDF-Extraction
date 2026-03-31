@@ -6,11 +6,7 @@ import urllib.request
 
 from flask import Flask, Response, request
 from builder import build_filtered_pdf
-from keywords_embedded import (
-    COMPARABLE_RENTAL_PATTERN_KEYS,
-    COMPARABLE_SALES_PATTERN_KEYS,
-    PATTERN_DEFINITIONS,
-)
+from keywords_embedded import (COMPARABLE_RENTAL_PATTERN_KEYS, COMPARABLE_SALES_PATTERN_KEYS, EXCLUDED_PAGE_PHRASES, PATTERN_DEFINITIONS)
 from scanner import scan_pdf
 
 _PROJECT_ROOT = Path(__file__).resolve().parent
@@ -45,7 +41,11 @@ def download_pdf(url: str, path: str):
 
 def scan_pdf_safe(path: str):
     try:
-        return scan_pdf(pdf_path=path, patterns=PATTERN_DEFINITIONS)
+        return scan_pdf(
+            pdf_path=path,
+            patterns=PATTERN_DEFINITIONS,
+            excluded_phrases=EXCLUDED_PAGE_PHRASES,
+        )
     except RuntimeError as e:
         raise ApiRequestError(400, "PDF processing failed", [str(e)])
 
