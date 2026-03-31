@@ -69,14 +69,14 @@ def process_pdf(input_path: str, output_name: str):
     )
 
     return {
-        "extracted_pages": sorted(p + 1 for p in matched),
+        "identified_pages": sorted(p + 1 for p in matched),
         "filtered_pdf_path": str(output_path.relative_to(PROJECT_ROOT)),
         "total_pages_in_pdf": total_pages,
         **flags,
     }
 
-@app.post("/extract")
-def extract():
+@app.post("/analyze-pdf")
+def analyze_pdf():
     tmp_path = tempfile.mktemp(suffix=".pdf")
 
     try:
