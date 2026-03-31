@@ -1,16 +1,3 @@
-addendum = "market conditions addendum to the appraisal report"
-description = "general description"
-income = "Income Approach to value"
-grossIncome = "Toral gross montly rent"
-comparable = "Sales comparison analysis"
-comparableNumber = "COMPARABLE NO."
-comparableSales = "COMPARABLE SALE #"
-comparableSalesNumber = "COMPARABLE SALE NO."
-comparableRental = "COMPARABLE RENTAL #"
-comparableRentalsNumber = "COMPARABLE RENTAL NO."
-location = "LOCATED AT"
-appraisalValue = "APPRAISED VALUE OF SUBJECT PROPERTY"
-
 COMPARABLE_SALES_PATTERN_KEYS = (
     "Comparable",
     "Comparable Numbers",
@@ -23,16 +10,16 @@ COMPARABLE_RENTAL_PATTERN_KEYS = (
 )
 
 PATTERN_DEFINITIONS: dict[str, str] = {
-    "Addendum": addendum,
-    "Description": description,
-    "Income": income,
-    "Gross Income": grossIncome,
-    "Comparable": comparable,
-    "Comparable Numbers": comparableNumber,
-    "Comparable Sales": comparableSales,
-    "Comparable Rental": comparableRental,
-    "Comparable Rentals Number": comparableRentalsNumber,
-    "Comparable Sales Number": comparableSalesNumber,
-    "Location": location,
-    "Appraisal Value": appraisalValue,
+    "Addendum": "market conditions addendum to the appraisal report",
+    "Description": "general description",
+    "Income": "Income Approach to value",
+    "Gross Income": "Toral gross montly rent",
+    "Comparable": "Sales comparison analysis",
+    "Comparable Numbers": "COMPARABLE NO.",
+    "Comparable Sales": "COMPARABLE SALE #",
+    "Comparable Rental": "COMPARABLE RENTAL #",
+    "Comparable Rentals Number": "COMPARABLE RENTAL NO.",
+    "Comparable Sales Number": "COMPARABLE SALE NO.",
+    "Location": "LOCATED AT",
+    "Appraisal Value": "APPRAISED VALUE OF SUBJECT PROPERTY",
 }

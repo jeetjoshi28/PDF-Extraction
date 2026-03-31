@@ -1,21 +1,17 @@
-import fitz  
+import fitz
 
-def scan_pdf(
-    pdf_path: str,
-    patterns: dict[str, str],
-) -> tuple[dict, int]:
-    doc = fitz.open(pdf_path)
-    total_pages = len(doc)
-    page_matches: dict[int, list[str]] = {}
+def scan_pdf(pdf_path: str, patterns: dict[str, str]) -> tuple[dict, int]:
+    with fitz.open(pdf_path) as doc:
+        total_pages = len(doc)
 
-    for page_number in range(total_pages):
-        page_text = doc[page_number].get_text().lower()
-        page_matches[page_number] = [
-            name
-            for name, phrase in patterns.items()
-            if phrase.lower() in page_text
-        ]
+        matched = {
+            i: [
+                name
+                for name, phrase in patterns.items()
+                if phrase.lower() in doc[i].get_text().lower()
+            ]
+            for i in range(total_pages)
+            if any(phrase.lower() in doc[i].get_text().lower() for phrase in patterns.values())
+        }
 
-    doc.close()
-    matched = {page: names for page, names in page_matches.items() if names}
     return matched, total_pages
